@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SKAO Inventory Management System</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for barcode scanning overlay */
+        .scanner-overlay {
+            position: relative;
+        }
+        .scanner-line {
+            position: absolute;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #00ff00, transparent);
+            animation: scan 2s linear infinite;
+        }
+        @keyframes scan {
+            0% { top: 0%; }
+            100% { top: 100%; }
+        }
+        .barcode-frame {
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Lucide React icons as components
+        const Icon = ({ name, className = "w-5 h-5", ...props }) => {
+            const icons = {
+                Search: () => (
+                    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <path d="M21 21l-4.35-4.35"></path>
+                    </svg>
+                ),
+                Plus: () => (
+                    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
+                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                ),
+                Minus: () => (
+                    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
+                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                    </svg>
+                ),
+                Package: () => (
+                    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
+                        <line x1="16.5" y1="9.4" x2="7.5" y2="4.21"></line>
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                        <polyline points="3.27,6.96 12,12.01 20.73,6.96"></polyline>
+                        <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                    </svg>
+                ),
+                Scan: () => (
+                    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
+                        <path d="M3 7V5a2 2 0 0 1 2-2h2"></path>
+                        <path d="M17 3h2a2 2 0 0 1 2 2v2"></path>
+                        <path d="M21 17v2a2 2 0 0 1-2 2h-2"></path>
+                        <path d="M7 21H5a2 2 0 0 1-2-2v-2"></path>
+                        <line x1="12" y1="8" x2="12" y2="16"></line>
+                    </svg>
+                ),
+                AlertTriangle: () => (
+                    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                ),
+                CheckCircle: () => (
+                    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                        <polyline points="22,4 12,14.01 9,11.01"></polyline>
+                    </svg>
+                ),
+                BarChart3: () => (
+                    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
+                        <path d="M3 3v18h18"></path>
+                        <path d="M18 17V9"></path>
+                        <path d="M13 17V5"></path>
+                        <path d="M8 17v-3"></path>
+                    </svg>
+                ),
+                Download: () => (
+                    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7,10 12,15 17,10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                ),
+                Camera: () => (
+                    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                        <circle cx="12" cy="13" r="4"></circle>
+                    </svg>
+                ),
+                X: () => (
+                    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" {...props}>
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                )
+            };
+            
+            const IconComponent = icons[name];
+            return IconComponent ? <IconComponent /> : null;
+        };
+
+        const InventorySystem = () => {
+            const [inventory, setInventory] = useState([
+                {
+                    id: '1',
+                    barcode: 'SKAO-RX-001',
+                    name: 'Low Band Receiver',
+                    category: 'Receivers',
+                    location: 'Warehouse A-1',
+                    quantity: 15,
+                    minStock: 5,
+                    unitPrice: 25000,
+                    supplier: 'RadioTech Ltd',
+                    lastUpdated: new Date().toISOString()
+                },
+                {
+                    id: '2',
+                    barcode: 'SKAO-ANT-002',
+                    name: 'Dish Antenna 15m',
+                    category: 'Antennas',
+                    location: 'Yard B',
+                    quantity: 3,
+                    minStock: 2,
+                    unitPrice: 150000,
+                    supplier: 'AstroSystems',
+                    lastUpdated: new Date().toISOString()
+                },
+                {
+                    id: '3',
+                    barcode: 'SKAO-COMP-003',
+                    name: 'Signal Processing Unit',
+                    category: 'Computing',
+                    location: 'Server Room',
+                    quantity: 8,
+                    minStock: 3,
+                    unitPrice: 45000,
+                    supplier: 'TechCore',
+                    lastUpdated: new Date().toISOString()
+                }
+            ]);
+
+            const [transactions, setTransactions] = useState([]);
+            const [searchTerm, setSearchTerm] = useState('');
+            const [selectedCategory, setSelectedCategory] = useState('All');
+            const [scanMode, setScanMode] = useState(false);
+            const [scanInput, setScanInput] = useState('');
+            const [activeTab, setActiveTab] = useState('inventory');
+            const [showAddItem, setShowAddItem] = useState(false);
+            const [showCamera, setShowCamera] = useState(false);
+            const [cameraAction, setCameraAction] = useState('out');
+            const [scannedBarcode, setScannedBarcode] = useState('');
+            const [quantityInput, setQuantityInput] = useState(1);
+            const [scannerReady, setScannerReady] = useState(false);
+            const videoRef = useRef(null);
+
+            const [newItem, setNewItem] = useState({
+                barcode: '',
+                name: '',
+                category: '',
+                location: '',
+                quantity: 0,
+                minStock: 0,
+                unitPrice: 0,
+                supplier: ''
+            });
+
+            const scanInputRef = useRef(null);
+            const categories = ['All', ...new Set(inventory.map(item => item.category))];
+
+            // Camera scanning functions
+            const startCamera = async (action) => {
+                setCameraAction(action);
+                setShowCamera(true);
+                setScannedBarcode('');
+                setQuantityInput(1);
+                setScannerReady(false);
+                
+                // Wait for QuaggaJS to load
+                if (typeof window.Quagga === 'undefined') {
+                    alert('Barcode scanner is loading. Please try again in a moment.');
+                    setShowCamera(false);
+                    return;
+                }
+                
+                try {
+                    setTimeout(() => {
+                        window.Quagga.init({
+                            inputStream: {
+                                name: "Live",
+                                type: "LiveStream",
+                                target: document.getElementById('scanner-container'),
+                                constraints: {
+                                    width: { min: 640, ideal: 1280, max: 1920 },
+                                    height: { min: 480, ideal: 720, max: 1080 },
+                                    facingMode: "environment",
+                                    aspectRatio: { min: 1, max: 2 }
+                                }
+                            },
+                            locator: {
+                                patchSize: "medium",
+                                halfSample: true
+                            },
+                            numOfWorkers: navigator.hardwareConcurrency || 2,
+                            decoder: {
+                                readers: [
+                                    "code_128_reader",
+                                    "ean_reader",
+                                    "ean_8_reader", 
+                                    "code_39_reader",
+                                    "code_39_vin_reader",
+                                    "codabar_reader",
+                                    "upc_reader",
+                                    "upc_e_reader",
+                                    "i2of5_reader"
+                                ]
+                            },
+                            locate: true
+                        }, function(err) {
+                            if (err) {
+                                console.error('QuaggaJS initialization error:', err);
+                                alert('Unable to access camera. Please ensure:\n1. Camera permissions are granted\n2. You are using HTTPS\n3. Your device has a camera');
+                                setShowCamera(false);
+                                return;
+                            }
+                            console.log("Scanner ready!");
+                            setScannerReady(true);
+                            window.Quagga.start();
+                            window.Quagga.onDetected(onBarcodeDetected);
+                        });
+                    }, 500);
+                    
+                } catch (error) {
+                    console.error('Error starting camera:', error);
+                    alert('Unable to access camera. Please ensure camera permissions are granted and you are using HTTPS.');
+                    setShowCamera(false);
+                }
+            };
+
+            const onBarcodeDetected = (result) => {
+                const code = result.codeResult.code;
+                console.log('Barcode detected:', code);
+                
+                // Stop scanning temporarily to prevent multiple detections
+                window.Quagga.stop();
+                setScannedBarcode(code);
+                
+                // Play success sound
+                try {
+                    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+                    
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+                    
+                    oscillator.frequency.value = 800;
+                    oscillator.type = 'sine';
+                    
+                    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+                    
+                    oscillator.start(audioContext.currentTime);
+                    oscillator.stop(audioContext.currentTime + 0.2);
+                } catch (e) {
+                    console.log('Audio not available');
+                }
+            };
+
+            const stopCamera = () => {
+                if (typeof window.Quagga !== 'undefined') {
+                    window.Quagga.stop();
+                    window.Quagga.offDetected(onBarcodeDetected);
+                }
+                setShowCamera(false);
+                setScannedBarcode('');
+                setScannerReady(false);
+            };
+
+            const restartScanning = () => {
+                setScannedBarcode('');
+                if (typeof window.Quagga !== 'undefined') {
+                    window.Quagga.start();
+                }
+            };
+
+            const processScannedItem = () => {
+                if (!scannedBarcode) return;
+                
+                handleScan(scannedBarcode, cameraAction, quantityInput);
+                setScannedBarcode('');
+                setQuantityInput(1);
+                stopCamera();
+            };
+
+            const filteredInventory = inventory.filter(item => {
+                const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                     item.barcode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                     item.location.toLowerCase().includes(searchTerm.toLowerCase());
+                const matchesCategory = selectedCategory === 'All' || item.category === selectedCategory;
+                return matchesSearch && matchesCategory;
+            });
+
+            const lowStockItems = inventory.filter(item => item.quantity <= item.minStock);
+
+            const handleScan = (barcode, action, quantity = 1) => {
+                const item = inventory.find(i => i.barcode === barcode);
+                if (!item) {
+                    alert(`Item with barcode ${barcode} not found!`);
+                    return;
+                }
+
+                const newQuantity = action === 'in' 
+                    ? item.quantity + quantity 
+                    : Math.max(0, item.quantity - quantity);
+
+                setInventory(prev => prev.map(i => 
+                    i.barcode === barcode 
+                        ? { ...i, quantity: newQuantity, lastUpdated: new Date().toISOString() }
+                        : i
+                ));
+
+                const transaction = {
+                    id: Date.now().toString(),
+                    barcode,
+                    itemName: item.name,
+                    action: action === 'in' ? 'Stock In' : 'Stock Out',
+                    quantity,
+                    timestamp: new Date().toISOString(),
+                    user: 'Current User',
+                    previousQuantity: item.quantity,
+                    newQuantity
+                };
+
+                setTransactions(prev => [transaction, ...prev]);
+                setScanInput('');
+            };
+
+            const handleQuickScan = (e) => {
+                if (e.key === 'Enter' && scanInput.trim()) {
+                    const parts = scanInput.split(' ');
+                    const barcode = parts[0];
+                    const action = parts[1] || 'out';
+                    const quantity = parseInt(parts[2]) || 1;
+                    
+                    handleScan(barcode, action, quantity);
+                }
+            };
+
+            const addNewItem = () => {
+                if (!newItem.barcode || !newItem.name) {
+                    alert('Barcode and name are required!');
+                    return;
+                }
+
+                const item = {
+                    id: Date.now().toString(),
+                    ...newItem,
+                    quantity: parseInt(newItem.quantity),
+                    minStock: parseInt(newItem.minStock),
+                    unitPrice: parseFloat(newItem.unitPrice),
+                    lastUpdated: new Date().toISOString()
+                };
+
+                setInventory(prev => [...prev, item]);
+                setNewItem({
+                    barcode: '',
+                    name: '',
+                    category: '',
+                    location: '',
+                    quantity: 0,
+                    minStock: 0,
+                    unitPrice: 0,
+                    supplier: ''
+                });
+                setShowAddItem(false);
+            };
+
+            const exportData = () => {
+                const data = {
+                    inventory,
+                    transactions,
+                    exportDate: new Date().toISOString()
+                };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `skao-inventory-${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
+            };
+
+            const getStockStatus = (item) => {
+                if (item.quantity === 0) return { status: 'Out of Stock', color: 'text-red-600', bg: 'bg-red-100' };
+                if (item.quantity <= item.minStock) return { status: 'Low Stock', color: 'text-yellow-600', bg: 'bg-yellow-100' };
+                return { status: 'In Stock', color: 'text-green-600', bg: 'bg-green-100' };
+            };
+
+            const totalValue = inventory.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+
+            return (
+                <div className="max-w-7xl mx-auto p-6 bg-gray-50 min-h-screen">
+                    <div className="bg-white rounded-lg shadow-lg">
+                        <div className="border-b border-gray-200 p-6">
+                            <div className="flex justify-between items-center mb-4">
+                                <h1 className="text-3xl font-bold text-gray-900">SKAO Inventory Management System</h1>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => startCamera('in')}
+                                        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                    >
+                                        <Icon name="Camera" className="w-4 h-4" />
+                                        Scan In
+                                    </button>
+                                    <button
+                                        onClick={() => startCamera('out')}
+                                        className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                                    >
+                                        <Icon name="Camera" className="w-4 h-4" />
+                                        Scan Out
+                                    </button>
+                                    <button
+                                        onClick={exportData}
+                                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                    >
+                                        <Icon name="Download" className="w-4 h-4" />
+                                        Export Data
+                                    </button>
+                                    <button
+                                        onClick={() => setScanMode(!scanMode)}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg ${
+                                            scanMode ? 'bg-green-600 text-white' : 'bg-gray-600 text-white'
+                                        } hover:opacity-90`}
+                                    >
+                                        <Icon name="Scan" className="w-4 h-4" />
+                                        {scanMode ? 'Exit Scan' : 'Scan Mode'}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Stats Dashboard */}
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                                <div className="bg-blue-50 p-4 rounded-lg">
+                                    <div className="flex items-center gap-3">
+                                        <Icon name="Package" className="w-8 h-8 text-blue-600" />
+                                        <div>
+                                            <p className="text-sm text-blue-600">Total Items</p>
+                                            <p className="text-2xl font-bold text-blue-700">{inventory.length}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="bg-green-50 p-4 rounded-lg">
+                                    <div className="flex items-center gap-3">
+                                        <Icon name="CheckCircle" className="w-8 h-8 text-green-600" />
+                                        <div>
+                                            <p className="text-sm text-green-600">Total Value</p>
+                                            <p className="text-2xl font-bold text-green-700">${totalValue.toLocaleString()}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="bg-yellow-50 p-4 rounded-lg">
+                                    <div className="flex items-center gap-3">
+                                        <Icon name="AlertTriangle" className="w-8 h-8 text-yellow-600" />
+                                        <div>
+                                            <p className="text-sm text-yellow-600">Low Stock Items</p>
+                                            <p className="text-2xl font-bold text-yellow-700">{lowStockItems.length}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="bg-purple-50 p-4 rounded-lg">
+                                    <div className="flex items-center gap-3">
+                                        <Icon name="BarChart3" className="w-8 h-8 text-purple-600" />
+                                        <div>
+                                            <p className="text-sm text-purple-600">Categories</p>
+                                            <p className="text-2xl font-bold text-purple-700">{categories.length - 1}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Scan Mode Interface */}
+                            {scanMode && (
+                                <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
+                                    <h3 className="text-lg font-semibold text-green-800 mb-3">Quick Scan Interface</h3>
+                                    <div className="flex gap-4">
+                                        <input
+                                            ref={scanInputRef}
+                                            type="text"
+                                            value={scanInput}
+                                            onChange={(e) => setScanInput(e.target.value)}
+                                            onKeyPress={handleQuickScan}
+                                            placeholder="Scan barcode or type: BARCODE ACTION QUANTITY (e.g., SKAO-RX-001 in 5)"
+                                            className="flex-1 px-4 py-2 border border-green-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        />
+                                        <div className="text-sm text-green-600 flex items-center">
+                                            Actions: 'in' for stock in, 'out' for stock out
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Navigation Tabs */}
+                            <div className="flex gap-4 mb-4">
+                                <button
+                                    onClick={() => setActiveTab('inventory')}
+                                    className={`px-4 py-2 rounded-lg font-medium ${
+                                        activeTab === 'inventory' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                                    }`}
+                                >
+                                    Inventory
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('transactions')}
+                                    className={`px-4 py-2 rounded-lg font-medium ${
+                                        activeTab === 'transactions' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                                    }`}
+                                >
+                                    Transactions ({transactions.length})
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('alerts')}
+                                    className={`px-4 py-2 rounded-lg font-medium ${
+                                        activeTab === 'alerts' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                                    }`}
+                                >
+                                    Low Stock Alerts ({lowStockItems.length})
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-6">
+                            {activeTab === 'inventory' && (
+                                <>
+                                    {/* Search and Filter */}
+                                    <div className="flex flex-col md:flex-row gap-4 mb-6">
+                                        <div className="flex-1 relative">
+                                            <Icon name="Search" className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                                            <input
+                                                type="text"
+                                                placeholder="Search by name, barcode, or location..."
+                                                value={searchTerm}
+                                                onChange={(e) => setSearchTerm(e.target.value)}
+                                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <select
+                                            value={selectedCategory}
+                                            onChange={(e) => setSelectedCategory(e.target.value)}
+                                            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            {categories.map(category => (
+                                                <option key={category} value={category}>{category}</option>
+                                            ))}
+                                        </select>
+                                        <button
+                                            onClick={() => setShowAddItem(true)}
+                                            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                                        >
+                                            <Icon name="Plus" className="w-4 h-4" />
+                                            Add Item
+                                        </button>
+                                    </div>
+
+                                    {/* Inventory Table */}
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full border-collapse">
+                                            <thead>
+                                                <tr className="bg-gray-100">
+                                                    <th className="text-left p-3 font-semibold">Barcode</th>
+                                                    <th className="text-left p-3 font-semibold">Item Name</th>
+                                                    <th className="text-left p-3 font-semibold">Category</th>
+                                                    <th className="text-left p-3 font-semibold">Location</th>
+                                                    <th className="text-right p-3 font-semibold">Quantity</th>
+                                                    <th className="text-left p-3 font-semibold">Status</th>
+                                                    <th className="text-right p-3 font-semibold">Unit Price</th>
+                                                    <th className="text-right p-3 font-semibold">Total Value</th>
+                                                    <th className="text-center p-3 font-semibold">Actions</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {filteredInventory.map((item) => {
+                                                    const status = getStockStatus(item);
+                                                    return (
+                                                        <tr key={item.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                                            <td className="p-3 font-mono text-sm">{item.barcode}</td>
+                                                            <td className="p-3 font-medium">{item.name}</td>
+                                                            <td className="p-3">{item.category}</td>
+                                                            <td className="p-3">{item.location}</td>
+                                                            <td className="p-3 text-right font-mono">{item.quantity}</td>
+                                                            <td className="p-3">
+                                                                <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.color} ${status.bg}`}>
+                                                                    {status.status}
+                                                                </span>
+                                                            </td>
+                                                            <td className="p-3 text-right">${item.unitPrice.toLocaleString()}</td>
+                                                            <td className="p-3 text-right font-semibold">${(item.quantity * item.unitPrice).toLocaleString()}</td>
+                                                            <td className="p-3">
+                                                                <div className="flex gap-2 justify-center">
+                                                                    <button
+                                                                        onClick={() => handleScan(item.barcode, 'in', 1)}
+                                                                        className="p-1 bg-green-600 text-white rounded hover:bg-green-700"
+                                                                        title="Stock In"
+                                                                    >
+                                                                        <Icon name="Plus" className="w-4 h-4" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleScan(item.barcode, 'out', 1)}
+                                                                        className="p-1 bg-red-600 text-white rounded hover:bg-red-700"
+                                                                        title="Stock Out"
+                                                                    >
+                                                                        <Icon name="Minus" className="w-4 h-4" />
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </>
+                            )}
+
+                            {activeTab === 'transactions' && (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full border-collapse">
+                                        <thead>
+                                            <tr className="bg-gray-100">
+                                                <th className="text-left p-3 font-semibold">Timestamp</th>
+                                                <th className="text-left p-3 font-semibold">Barcode</th>
+                                                <th className="text-left p-3 font-semibold">Item</th>
+                                                <th className="text-center p-3 font-semibold">Action</th>
+                                                <th className="text-right p-3 font-semibold">Quantity</th>
+                                                <th className="text-right p-3 font-semibold">Previous</th>
+                                                <th className="text-right p-3 font-semibold">New</th>
+                                                <th className="text-left p-3 font-semibold">User</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {transactions.map((transaction) => (
+                                                <tr key={transaction.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                                    <td className="p-3 text-sm">{new Date(transaction.timestamp).toLocaleString()}</td>
+                                                    <td className="p-3 font-mono text-sm">{transaction.barcode}</td>
+                                                    <td className="p-3">{transaction.itemName}</td>
+                                                    <td className="p-3 text-center">
+                                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                                            transaction.action === 'Stock In' 
+                                                                ? 'bg-green-100 text-green-700' 
+                                                                : 'bg-red-100 text-red-700'
+                                                        }`}>
+                                                            {transaction.action}
+                                                        </span>
+                                                    </td>
+                                                    <td className="p-3 text-right font-mono">{transaction.quantity}</td>
+                                                    <td className="p-3 text-right font-mono">{transaction.previousQuantity}</td>
+                                                    <td className="p-3 text-right font-mono font-semibold">{transaction.newQuantity}</td>
+                                                    <td className="p-3">{transaction.user}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+
+                            {activeTab === 'alerts' && (
+                                <div className="space-y-4">
+                                    {lowStockItems.length === 0 ? (
+                                        <div className="text-center py-8">
+                                            <Icon name="CheckCircle" className="w-12 h-12 text-green-500 mx-auto mb-3" />
+                                            <h3 className="text-lg font-semibold text-gray-700">No Low Stock Items</h3>
+                                            <p className="text-gray-500">All items are above minimum stock levels</p>
+                                        </div>
+                                    ) : (
+                                        lowStockItems.map((item) => (
+                                            <div key={item.id} className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                                <div className="flex justify-between items-center">
+                                                    <div>
+                                                        <h3 className="font-semibold text-yellow-800">{item.name}</h3>
+                                                        <p className="text-sm text-yellow-600">
+                                                            Current: {item.quantity} | Minimum: {item.minStock} | Location: {item.location}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => handleScan(item.barcode, 'in', item.minStock)}
+                                                            className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                                                        >
+                                                            Restock to Min
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Camera Scanner Modal */}
+                    {showCamera && (
+                        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50">
+                            <div className="relative w-full h-full max-w-md max-h-screen">
+                                <div className="absolute top-4 right-4 z-10">
+                                    <button
+                                        onClick={stopCamera}
+                                        className="p-2 bg-red-600 text-white rounded-full hover:bg-red-700"
+                                    >
+                                        <Icon name="X" className="w-6 h-6" />
+                                    </button>
+                                </div>
+                                
+                                <div className="absolute top-4 left-4 z-10 bg-black bg-opacity-75 text-white p-3 rounded-lg">
+                                    <h3 className="font-semibold">
+                                        {cameraAction === 'in' ? 'Scan to Stock In' : 'Scan to Stock Out'}
+                                    </h3>
+                                    <p className="text-sm opacity-75">Point camera at barcode - scanning automatically</p>
+                                    {scannedBarcode && (
+                                        <p className="text-sm text-green-400 mt-1">✓ Barcode detected!</p>
+                                    )}
+                                </div>
+
+                                <div
+                                    id="scanner-container"
+                                    className="w-full h-full bg-black flex items-center justify-center scanner-overlay"
+                                    style={{ minHeight: '400px' }}
+                                >
+                                    {!scannerReady && (
+                                        <div className="text-white text-center">
+                                            <Icon name="Camera" className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                                            <p className="text-sm opacity-75">Starting camera...</p>
+                                        </div>
+                                    )}
+                                    {scannerReady && !scannedBarcode && (
+                                        <div className="scanner-line"></div>
+                                    )}
+                                </div>
+
+                                {/* Scan overlay */}
+                                {scannerReady && (
+                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                        <div className="w-64 h-32 barcode-frame relative">
+                                            <div className="absolute top-0 left-0 w-8 h-8 border-l-4 border-t-4 border-green-400"></div>
+                                            <div className="absolute top-0 right-0 w-8 h-8 border-r-4 border-t-4 border-green-400"></div>
+                                            <div className="absolute bottom-0 left-0 w-8 h-8 border-l-4 border-b-4 border-green-400"></div>
+                                            <div className="absolute bottom-0 right-0 w-8 h-8 border-r-4 border-b-4 border-green-400"></div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Retry button - only show if no barcode detected yet */}
+                                {scannerReady && !scannedBarcode && (
+                                    <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2">
+                                        <button
+                                            onClick={restartScanning}
+                                            className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-lg hover:bg-gray-100"
+                                        >
+                                            <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
+                                                <Icon name="Scan" className="w-6 h-6 text-white" />
+                                            </div>
+                                        </button>
+                                        <p className="text-white text-center text-xs mt-2">Tap to retry scan</p>
+                                    </div>
+                                )}
+
+                                {/* Scanned barcode input */}
+                                {scannedBarcode && (
+                                    <div className="absolute bottom-8 left-4 right-4 bg-white p-4 rounded-lg shadow-xl">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <Icon name="CheckCircle" className="w-5 h-5 text-green-600" />
+                                            <h4 className="font-semibold text-gray-800">Barcode Detected!</h4>
+                                        </div>
+                                        <div className="bg-gray-100 p-2 rounded mb-2">
+                                            <p className="font-mono text-sm text-center">{scannedBarcode}</p>
+                                        </div>
+                                        <div className="flex gap-2 mb-3">
+                                            <input
+                                                type="number"
+                                                value={quantityInput}
+                                                onChange={(e) => setQuantityInput(parseInt(e.target.value) || 1)}
+                                                min="1"
+                                                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                                                placeholder="Quantity"
+                                            />
+                                            <select
+                                                value={cameraAction}
+                                                onChange={(e) => setCameraAction(e.target.value)}
+                                                className="px-3 py-2 border border-gray-300 rounded-lg"
+                                            >
+                                                <option value="in">Stock In</option>
+                                                <option value="out">Stock Out</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={processScannedItem}
+                                                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+                                            >
+                                                Process Transaction
+                                            </button>
+                                            <button
+                                                onClick={restartScanning}
+                                                className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+                                            >
+                                                Scan Again
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Add Item Modal */}
+                    {showAddItem && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+                                <h3 className="text-lg font-semibold mb-4">Add New Item</h3>
+                                <div className="space-y-4">
+                                    <input
+                                        type="text"
+                                        placeholder="Barcode"
+                                        value={newItem.barcode}
+                                        onChange={(e) => setNewItem(prev => ({ ...prev, barcode: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="Item Name"
+                                        value={newItem.name}
+                                        onChange={(e) => setNewItem(prev => ({ ...prev, name: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="Category"
+                                        value={newItem.category}
+                                        onChange={(e) => setNewItem(prev => ({ ...prev, category: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="Location"
+                                        value={newItem.location}
+                                        onChange={(e) => setNewItem(prev => ({ ...prev, location: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                    />
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <input
+                                            type="number"
+                                            placeholder="Initial Quantity"
+                                            value={newItem.quantity}
+                                            onChange={(e) => setNewItem(prev => ({ ...prev, quantity: e.target.value }))}
+                                            className="px-3 py-2 border border-gray-300 rounded-lg"
+                                        />
+                                        <input
+                                            type="number"
+                                            placeholder="Minimum Stock"
+                                            value={newItem.minStock}
+                                            onChange={(e) => setNewItem(prev => ({ ...prev, minStock: e.target.value }))}
+                                            className="px-3 py-2 border border-gray-300 rounded-lg"
+                                        />
+                                    </div>
+                                    <input
+                                        type="number"
+                                        placeholder="Unit Price"
+                                        value={newItem.unitPrice}
+                                        onChange={(e) => setNewItem(prev => ({ ...prev, unitPrice: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="Supplier"
+                                        value={newItem.supplier}
+                                        onChange={(e) => setNewItem(prev => ({ ...prev, supplier: e.target.value }))}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                                    />
+                                </div>
+                                <div className="flex gap-2 mt-6">
+                                    <button
+                                        onClick={addNewItem}
+                                        className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                    >
+                                        Add Item
+                                    </button>
+                                    <button
+                                        onClick={() => setShowAddItem(false)}
+                                        className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        ReactDOM.render(<InventorySystem />, document.getElementById('root'));
+    </script>
+</body>
+</html>
